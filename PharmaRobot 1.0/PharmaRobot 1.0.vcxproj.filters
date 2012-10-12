@@ -22,6 +22,9 @@
     <None Include="res\PharmaRobot 1.0.ico">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="Bitmap1.Bmp">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PharmaRobot 1.0.h">
