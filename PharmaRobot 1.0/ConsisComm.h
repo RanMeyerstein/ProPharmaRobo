@@ -164,6 +164,9 @@ public:
 	BOOL SendConsisMessage(char* MessageContent, size_t BufferSize);	
 	BOOL ReceiveConsisMessage(char* ReceiveBuffer, int * messageLength, int timeout);
 
+	char amessageBuffer[MAX_CONSIS_MESSAGE_SIZE];//Message buffers that are transferred to A dialogue Handler
+	char bmessageBuffer[MAX_CONSIS_MESSAGE_SIZE];//Message buffers that are transferred to B dialogue Handler
+
 private:
 
 	char clinetname[256];
