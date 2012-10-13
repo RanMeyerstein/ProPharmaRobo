@@ -18,15 +18,7 @@ ProRbtDb g_ProRbtDb;
 QUERYRESPONSE HandleQueryCommand(PRORBTPARAMS * pProRbtParams, CPharmaRobot10Dlg* pdialog)
 {
 	size_t retsize;
-	BConsisStockRequest * pBresponse = (BConsisStockRequest *)pdialog->ConsisMessage;
-	//Protect with Mutex the CONSIS resource
-	CSingleLock singleLock(&(pdialog->m_Mutex));
-
-	// Attempt to lock the shared resource
-	if (singleLock.Lock(INFINITE))
-	{
-		//Log Lock success
-	}
+	BConsisStockRequest * pBresponse = (BConsisStockRequest *)pdialog->ConsisMessageB;
 
 	if (pdialog->Consis.ConnectionStarted == FALSE)
 	{
@@ -34,11 +26,20 @@ QUERYRESPONSE HandleQueryCommand(PRORBTPARAMS * pProRbtParams, CPharmaRobot10Dlg
 			pdialog->EnableCondsisTab();
 	}
 
+	//Try to catch the Mutex for CONSIS Access
+	//Protect with Mutex the CONSIS resource
+	CSingleLock singleLock(&(pdialog->m_MutexBMessage));
+
+	// Attempt to lock the shared resource
+	if (singleLock.Lock(INFINITE))
+	{
+		//log locking success
+	}
 
 	if (pdialog->Consis.ConnectionStarted == TRUE) 
 	{//Build B Message with Barcode from RBT parameters
-		memset(pdialog->ConsisMessage, '0', 41);
-		pdialog->ConsisMessage[41] = '\0';
+		memset(pdialog->ConsisMessageB, '0', 41);
+		pdialog->ConsisMessageB[41] = '\0';
 
 		/*Counter Unit*/
 		CString CounterUnitString = pProRbtParams->CounterUnit;
@@ -46,7 +47,7 @@ QUERYRESPONSE HandleQueryCommand(PRORBTPARAMS * pProRbtParams, CPharmaRobot10Dlg
 		int location = 4 - len;
 		wchar_t Source[4];
 		wsprintf(Source, CounterUnitString.GetString());
-		wcstombs(&(pdialog->ConsisMessage[location]), Source, len);
+		wcstombs(&(pdialog->ConsisMessageB[location]), Source, len);
 
 		/*Barcode*/
 		CString BarCodeString = pProRbtParams->Barcode;
@@ -57,22 +58,19 @@ QUERYRESPONSE HandleQueryCommand(PRORBTPARAMS * pProRbtParams, CPharmaRobot10Dlg
 
 		memset(pBresponse->ArticleId,' ',30); //Clear leading zeros
 
-		wcstombs(&(pdialog->ConsisMessage[location]), barcode, len);
+		wcstombs(&(pdialog->ConsisMessageB[location]), barcode, len);
 
-		pdialog->ConsisMessage[0] = 'B';
+		pdialog->ConsisMessageB[0] = 'B';
 
-		char buffer[MAX_CONSIS_MESSAGE_SIZE]; buffer[0] = 0;
-		int MessageLength;
-		while (buffer[0] != 'b')//BUG override. Sometimes the function returns an 'a' response
-		{
-			/* Send B message to CONSIS */
-			pdialog->Consis.SendConsisMessage(pdialog->ConsisMessage, 42);
-			MessageLength = sizeof(buffer);
-			pdialog->Consis.ReceiveConsisMessage(buffer, &MessageLength, 1000);
-		}
-		buffer[MessageLength] = '\0';
+		/* Send B message to CONSIS */
+		pdialog->Consis.SendConsisMessage(pdialog->ConsisMessageB, 42);
 
-		bConsisReplyHeader *pHeader = (bConsisReplyHeader *)buffer;
+		memset(pdialog->Consis.bmessageBuffer, 0, MAX_CONSIS_MESSAGE_SIZE);
+
+		/* Infinitly wait for the reply to arrive from CONSIS by means of AsynchDialogue listener*/
+		::WaitForSingleObject(pdialog->Consis.bMessageEvent.m_hObject, INFINITE);
+
+		bConsisReplyHeader *pHeader = (bConsisReplyHeader *)pdialog->Consis.bmessageBuffer;
 
 		//Extract number of locations
 		char numloc[3];
@@ -245,6 +243,9 @@ DWORD WINAPI SocketThread(CPharmaRobot10Dlg* pdialog)
 	}
 
 	for(;;) { // Run forever
+
+		if (pdialog->ExitThreads == TRUE)
+			break;
 		
 		//create the socket
 		CSocket clntSock;

@@ -159,13 +159,17 @@ public:
 	bool ConnectionStarted;
 	bool DllsLoaded;
 	int ConnectToConsis(char* clientName, CListBox * dlglistBox, CButton * remotebutton); 
-	int SendStockQuery(char* MessageContent);
-	int SendDispnseCommand(char* MessageContent);
 	BOOL SendConsisMessage(char* MessageContent, size_t BufferSize);	
 	BOOL ReceiveConsisMessage(char* ReceiveBuffer, int * messageLength, int timeout);
 
 	char amessageBuffer[MAX_CONSIS_MESSAGE_SIZE];//Message buffers that are transferred to A dialogue Handler
 	char bmessageBuffer[MAX_CONSIS_MESSAGE_SIZE];//Message buffers that are transferred to B dialogue Handler
+
+	CEvent bMessageEvent;
+	CEvent aMessageEvent;
+
+	int bMessageLength;
+	int aMessageLength;
 
 private:
 

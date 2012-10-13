@@ -29,7 +29,8 @@ public:
 	CSocket  sockSrvr;
 	CSocket  sockRecv;
 	ConsisComm Consis;
-	char     ConsisMessage[512];
+	char     ConsisMessageA[512];
+	char     ConsisMessageB[512];
 
 // Dialog Data
 	enum { IDD = IDD_PHARMAROBOT10_DIALOG };
@@ -101,8 +102,11 @@ public:
 
 	int      m_OrderNum;
 	//Mutex for access to CONSIS
-	CMutex m_Mutex;
+	CMutex m_MutexAMessage;
+	CMutex m_MutexBMessage;
 	afx_msg void OnBnClickedButtonclr();
+
+	BOOL ExitThreads;
 };
 
 #endif //PHARMAROBOT1_0_DLG_H

@@ -23,19 +23,12 @@ DWORD WINAPI AsynchDialogueListenerThread(CPharmaRobot10Dlg* pdialog)
 
 	for (;;) //Run forever
 	{
+		if (pdialog->ExitThreads == TRUE)
+			break;
+
 		//Perform Message checking only if CONSIS is connected
 		if (pdialog->Consis.ConnectionStarted == TRUE)
 		{
-
-			//Try to catch the Mutex for CONSIS Access
-			//Protect with Mutex the CONSIS resource
-			CSingleLock singleLock(&(pdialog->m_Mutex));
-
-			// Attempt to lock the shared resource
-			if (singleLock.Lock(INFINITE))
-			{
-				//log locking success
-			}
 
 			//clear buffer
 			memset(buffer, 0, MAX_CONSIS_MESSAGE_SIZE);
@@ -140,7 +133,6 @@ DWORD WINAPI AsynchDialogueListenerThread(CPharmaRobot10Dlg* pdialog)
 				memcpy(&(IResponseToConsis.DemandingCounterUnitId), piRequestMessage->DemandingCounterUnitId, 
 					sizeof(IResponseToConsis.DemandingCounterUnitId));
 
-				//IResponseToConsis.Text[3] = '/0'; //Null terminator at the end of no text string
 				IResponseToConsis.Text[3] = ' ';
 				
 				mbstowcs_s(&convertedChars, wcstring, sizeof(IResponseToConsis) + 1, (char*)&IResponseToConsis, _TRUNCATE);
@@ -150,13 +142,24 @@ DWORD WINAPI AsynchDialogueListenerThread(CPharmaRobot10Dlg* pdialog)
 				pdialog->Consis.SendConsisMessage((char*)&IResponseToConsis, MessageISize);
 			}
 
-			//Ignore all other messages
-
-			singleLock.Unlock();
+			//Check if we received an 'b' request, copy content into 'b' buffer and set event for waiting thread
+			if (buffer[0] == 'b')
+			{
+				memcpy(pdialog->Consis.bmessageBuffer, buffer, MessageLength);
+				pdialog->Consis.bMessageLength = MessageLength;
+				pdialog->Consis.bMessageEvent.SetEvent();
+			}
+			//Check if we received an 'a' request, copy content into 'a' buffer and set event for waiting thread
+			if (buffer[0] == 'a')
+			{
+				memcpy(pdialog->Consis.amessageBuffer, buffer, MessageLength);
+				pdialog->Consis.aMessageLength = MessageLength;
+				pdialog->Consis.aMessageEvent.SetEvent();
+			}
 		
 		}//CONSIS connected if statement context
 
-		Sleep(200);
+		Sleep(20);
 	}
 	// NOT REACHED
 

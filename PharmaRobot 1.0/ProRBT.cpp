@@ -10,11 +10,21 @@ BOOL ProRbtDb::CheckAmountInStock(int * retAmount, char* Barcode, CPharmaRobot10
 	size_t convertedChars, origsize;
 	CString st;
 	wchar_t wcstring[100];
-	BConsisStockRequest * pBrequest = (BConsisStockRequest *)pdialog->ConsisMessage;
+	BConsisStockRequest * pBrequest = (BConsisStockRequest *)pdialog->ConsisMessageB;
+
+	//Try to catch the Mutex for CONSIS Access
+	//Protect with Mutex the CONSIS resource
+	CSingleLock singleLock(&(pdialog->m_MutexBMessage));
+
+	// Attempt to lock the shared resource
+	if (singleLock.Lock(INFINITE))
+	{
+		//log locking success
+	}
 
 	//Build B Message
-	memset(pdialog->ConsisMessage, '0', 41);
-	pdialog->ConsisMessage[41] = '\0';
+	memset(pdialog->ConsisMessageB, '0', 41);
+	pdialog->ConsisMessageB[41] = '\0';
 
 	/*Counter Unit*/
 	pBrequest->DemandingCounterUnitId[3] = '1';
@@ -24,40 +34,28 @@ BOOL ProRbtDb::CheckAmountInStock(int * retAmount, char* Barcode, CPharmaRobot10
 	size_t barcodesize = strlen(Barcode);
 	memcpy(&(pBrequest->ArticleId[30 - barcodesize]), Barcode, barcodesize);
 
-	pdialog->ConsisMessage[0] = 'B';
+	pdialog->ConsisMessageB[0] = 'B';
 
 	//Print in dialog box the B request
 	origsize = 43;
-	mbstowcs_s(&convertedChars, wcstring, origsize, pdialog->ConsisMessage, _TRUNCATE);
+	mbstowcs_s(&convertedChars, wcstring, origsize, pdialog->ConsisMessageB, _TRUNCATE);
 	st = wcstring; pdialog->m_listBoxMain.AddString(st);
 
-	char buffer[MAX_CONSIS_MESSAGE_SIZE]; buffer[0] = 0;
-	int MessageLength;
-	while (buffer[0] != 'b')//BUG override. Sometimes the function returns an 'a' response
-	{
-		/* Send B message to CONSIS */
-		if (pdialog->Consis.SendConsisMessage(pdialog->ConsisMessage, 42) == FALSE)
-		{
-			return FALSE;
-		}
-		MessageLength = sizeof(buffer);
-		pdialog->Consis.ReceiveConsisMessage(buffer, &MessageLength, 1000);
-	}
-	buffer[MessageLength] = '\0';
+	pdialog->Consis.SendConsisMessage(pdialog->ConsisMessageB, 41);
 
-	//Print in dialog box the b response
-	/*origsize = MessageLength + 1;
-	mbstowcs_s(&convertedChars, wcstring, origsize, buffer, _TRUNCATE);
-	st = wcstring; pdialog->m_listBoxMain.AddString(st);
-	*/
+	memset(pdialog->Consis.bmessageBuffer, 0, MAX_CONSIS_MESSAGE_SIZE);
+	/* Infinitly wait for the reply to arrive from CONSIS by means of AsynchDialogue listener*/
+	::WaitForSingleObject(pdialog->Consis.bMessageEvent.m_hObject, INFINITE);
 
-	bConsisReplyHeader *pHeader = (bConsisReplyHeader *)buffer;
+	bConsisReplyHeader *pHeader = (bConsisReplyHeader *)pdialog->Consis.bmessageBuffer;
 
 	//Extract Total Quantity of Item
 	char TotalQua[6];
 	TotalQua[5] = '\0';
 	memcpy(TotalQua, pHeader->TotalQuantity, sizeof(pHeader->TotalQuantity));
 	*retAmount =  atoi(TotalQua);
+
+	singleLock.Unlock();
 
 	return TRUE;
 }
@@ -71,9 +69,9 @@ BOOL ProRbtDb::BuildAndSendACommand(REQUESTINTERMEIDATEDB * pInteDb, CPharmaRobo
 	size_t convertedChars;
 
 	//Clear message
-	memset(pdialog->ConsisMessage, '0', 448); //18 header + 10 * 43 OCC size
+	memset(pdialog->ConsisMessageA, '0', 448); //18 header + 10 * 43 OCC size
 
-	pARequestHeader = (AConsisRequestHeader *)pdialog->ConsisMessage;
+	pARequestHeader = (AConsisRequestHeader *)pdialog->ConsisMessageA;
 
 	/*Counter Unit taken from ProRBT parameters*/
 	StringFromProRbt = pFirstLine->CounterUnit;//Take counter ID from first line
@@ -81,14 +79,14 @@ BOOL ProRbtDb::BuildAndSendACommand(REQUESTINTERMEIDATEDB * pInteDb, CPharmaRobo
 	int location = 12 - len;
 	wchar_t Source[4];
 	wsprintf(Source, StringFromProRbt.GetString());
-	wcstombs(&(pdialog->ConsisMessage[location]), Source, len);
+	wcstombs(&(pdialog->ConsisMessageA[location]), Source, len);
 
 	/*Dispenser Taken from ProRBT parameters*/
 	StringFromProRbt = pFirstLine->Dispenser;//Take Dispenser ID from first line
 	len = StringFromProRbt.GetLength();
 	location = 15 - len;
 	wsprintf(Source, StringFromProRbt.GetString());
-	wcstombs(&(pdialog->ConsisMessage[location]), Source, len);
+	wcstombs(&(pdialog->ConsisMessageA[location]), Source, len);
 
 	//Fill Barcode and Quantity per entry in stock
 	int i = pInteDb->firstIndexToStartfrom;
@@ -103,9 +101,9 @@ BOOL ProRbtDb::BuildAndSendACommand(REQUESTINTERMEIDATEDB * pInteDb, CPharmaRobo
 			wchar_t barcodeSent[14];
 			wsprintf(barcodeSent, StringFromProRbt.GetString());
 			//Fill with blanks instaed of leading zeros
-			memset(&(pdialog->ConsisMessage[(18 + (43 * (indexInAcommand + 1))) - 30]),' ', 30);
+			memset(&(pdialog->ConsisMessageA[(18 + (43 * (indexInAcommand + 1))) - 30]),' ', 30);
 			//Set the barcode
-			wcstombs(&(pdialog->ConsisMessage[location]), barcodeSent, len);
+			wcstombs(&(pdialog->ConsisMessageA[location]), barcodeSent, len);
 
 			/*Quantity Taken from ProRBT parameters*/
 			wchar_t ReqQuantity[5] = {0,0,0,0,0};
@@ -113,11 +111,11 @@ BOOL ProRbtDb::BuildAndSendACommand(REQUESTINTERMEIDATEDB * pInteDb, CPharmaRobo
 			StringFromProRbt = ReqQuantity;
 			len = StringFromProRbt.GetLength();
 			location = (30 + (indexInAcommand * 43)) - len;
-			wcstombs(&(pdialog->ConsisMessage[location]), ReqQuantity, len);
+			wcstombs(&(pdialog->ConsisMessageA[location]), ReqQuantity, len);
 
 			/* Clear PZN */
 			location = (18 + (43 * indexInAcommand));
-			memset(&(pdialog->ConsisMessage[location]),' ', 7);
+			memset(&(pdialog->ConsisMessageA[location]),' ', 7);
 
 			indexInAcommand++;//One more article in the 'A' command
 		}
@@ -129,7 +127,7 @@ BOOL ProRbtDb::BuildAndSendACommand(REQUESTINTERMEIDATEDB * pInteDb, CPharmaRobo
 
 	//Message size is a function of the number of articles in this 'A' command
 	MessageASize = 18 + (43*(indexInAcommand));
-	pdialog->ConsisMessage[indexInAcommand] = '\0';
+	pdialog->ConsisMessageA[indexInAcommand] = '\0';
 
 	/* Number of articles */
 	sprintf(numart,"%d",indexInAcommand);
@@ -151,25 +149,25 @@ BOOL ProRbtDb::BuildAndSendACommand(REQUESTINTERMEIDATEDB * pInteDb, CPharmaRobo
 	pdialog->m_EditOrderNum.GetWindowTextW(wideStr,origsize);
 	wcstombs_s(&convertedChars, nstring, origsize, wideStr , _TRUNCATE);
 	location = 9 - (origsize - 1);
-	memcpy((void*)&(pdialog->ConsisMessage[location]), (void*) nstring, (origsize - 1));
+	memcpy((void*)&(pdialog->ConsisMessageA[location]), (void*) nstring, (origsize - 1));
 
 	/*Priority Taken from GUI*/
 	origsize = pdialog->m_EditPriority.GetWindowTextLengthW() + 1;
 	pdialog->m_EditPriority.GetWindowTextW(wideStr,origsize);
 	wcstombs_s(&convertedChars, nstring, origsize, wideStr , _TRUNCATE);
 	location = 16 - (origsize - 1);
-	memcpy((void*)&(pdialog->ConsisMessage[location]), (void*) nstring, (origsize - 1));
+	memcpy((void*)&(pdialog->ConsisMessageA[location]), (void*) nstring, (origsize - 1));
 
-	pdialog->ConsisMessage[0] = 'A';
-
+	pdialog->ConsisMessageA[0] = 'A';
+	pdialog->ConsisMessageA[1] = '0';
 	//Print in dialog box the A request
 	origsize = MessageASize + 1;
 	wchar_t wcstring[1000];
-	mbstowcs_s(&convertedChars, wcstring, origsize, pdialog->ConsisMessage, _TRUNCATE);
+	mbstowcs_s(&convertedChars, wcstring, origsize, pdialog->ConsisMessageA, _TRUNCATE);
 	CString st = wcstring; pdialog->m_listBoxMain.AddString(st);
 
 	/* Send 'A' message to CONSIS */
-	if (pdialog->Consis.SendConsisMessage(pdialog->ConsisMessage, MessageASize) == FALSE)
+	if (pdialog->Consis.SendConsisMessage(pdialog->ConsisMessageA, MessageASize) == FALSE)
 		return FALSE;
 
 	return TRUE;
@@ -287,7 +285,7 @@ QUERYRESPONSE ProRbtDb::HandleCounterIdEntry(PRORBTCOUNTERSESSION * pCounterSess
 	QUERYRESPONSE returnvalue = Q_NOACK;
 	size_t retsize, len, convertedChars;
 	int MessageLength, NumTenBatches;
-	char buffer[MAX_CONSIS_MESSAGE_SIZE], numart[3];
+	char numart[3];
 	aConsisReplyHeader *paMesHeader;
 	aConsisReplyDispensedOcc* aocc;
 	REQUESTINTERMEIDATEDB InterMDb;
@@ -295,14 +293,6 @@ QUERYRESPONSE ProRbtDb::HandleCounterIdEntry(PRORBTCOUNTERSESSION * pCounterSess
 
 	if (pCounterSession->ExpectedNumLines == pCounterSession->ReceivedNumLines)
 	{
-		//Protect with Mutex the CONSIS resource
-		CSingleLock singleLock(&(pdialog->m_Mutex));
-
-		// Attempt to lock the shared resource
-		if (singleLock.Lock(INFINITE))
-		{
-			//log locking success
-		}
 
 		if (pdialog->Consis.ConnectionStarted == FALSE)
 		{
@@ -346,7 +336,6 @@ QUERYRESPONSE ProRbtDb::HandleCounterIdEntry(PRORBTCOUNTERSESSION * pCounterSess
 					{
 						//Error with Consis, Init entire Database
 						InitProRbtDb();
-						singleLock.Unlock();
 						memset(ackemessage.Message, 0, ACK_MESSAGE_SIZE * sizeof(_TCHAR));
 						wsprintf(ackemessage.Message,L"תקלה בשליחת שאילתת כמות במלאי לשרת קונסיס");
 						return Q_ERROR;
@@ -377,6 +366,16 @@ QUERYRESPONSE ProRbtDb::HandleCounterIdEntry(PRORBTCOUNTERSESSION * pCounterSess
 			//Handling 'A' dialogue is done in a batches of 10
 			NumTenBatches = 1 + (InterMDb.sizeInStock / 10);
 
+			//Try to catch the Mutex for CONSIS Access
+			//Protect with Mutex the CONSIS resource
+			CSingleLock singleLock(&(pdialog->m_MutexAMessage));
+
+			// Attempt to lock the shared resource
+			if (singleLock.Lock(INFINITE))
+			{
+				//log locking success
+			}
+
 			while (NumTenBatches !=0)
 			{
 				//Build 'A' Message with Barcode from RBT parameters only if there are items left to send
@@ -401,35 +400,28 @@ QUERYRESPONSE ProRbtDb::HandleCounterIdEntry(PRORBTCOUNTERSESSION * pCounterSess
 					memset(&(orderState[2]),'\0',1);
 					memset(orderState,'0',2);
 
+					//clear message buffer to be received from consis
+					memset(pdialog->Consis.amessageBuffer, 0 ,sizeof(pdialog->Consis.amessageBuffer));
+					MessageLength = sizeof(pdialog->Consis.amessageBuffer);
+					paMesHeader = (aConsisReplyHeader *)pdialog->Consis.amessageBuffer;
 					do
 					{
-						MessageLength = sizeof(buffer);
-						paMesHeader = (aConsisReplyHeader *)buffer;
-						//Break out of while if message reception fails
-						if (pdialog->Consis.ReceiveConsisMessage(buffer, &MessageLength, 1000) == FALSE)
-						{
-							st = L"Receive Consis Message 'a' timed out";
-							pdialog->m_listBoxMain.AddString(st);
-						}
-						else
-						{
-							buffer[MessageLength] = '\0';
+						/* Infinitly wait for the reply to arrive from CONSIS by means of AsynchDialogue listener*/
+						::WaitForSingleObject(pdialog->Consis.aMessageEvent.m_hObject, INFINITE);
 
-							memcpy(orderState, paMesHeader->OrderState, sizeof(paMesHeader->OrderState));
-							orderState[2] = '\0';
+						pdialog->Consis.amessageBuffer[pdialog->Consis.aMessageLength] = '\0';
 
-							//Print the reply of CONSIS 'a' to the dialog box
-							size_t origsize = strlen(buffer) + 1;
-							wchar_t wcstring[1000];
-							mbstowcs_s(&convertedChars, wcstring, origsize, buffer, _TRUNCATE);
-							st = wcstring; pdialog->m_listBoxMain.AddString(st);
-						}
+						memcpy(orderState, paMesHeader->OrderState, sizeof(paMesHeader->OrderState));
+						orderState[2] = '\0';
+
+						//Print the reply of CONSIS 'a' to the dialog box
+						size_t origsize = strlen(pdialog->Consis.amessageBuffer) + 1;
+						wchar_t wcstring[1000];
+						mbstowcs_s(&convertedChars, wcstring, origsize, pdialog->Consis.amessageBuffer, _TRUNCATE);
+						st = wcstring; pdialog->m_listBoxMain.AddString(st);
 
 					}while ((paMesHeader->OrderState[1] != '4') && (paMesHeader->OrderState[1] != '3'));
-					//Supposed to wait for quantity change by CONSIS to PMS, but now wait for ready. If Cancelled stop all.
-
-					//'A' command was cancelled. Items are missing from Stock in consis. Find which items are missing
-					//using the 'B' command, and build a new 'A' command.
+					//If Cancelled stop all.
 					if (paMesHeader->OrderState[1] == '3')
 					{//We checked that all the items are in stock. If Cancelled somthing is wrong in CONSIS
 						//Error with Consis, Init entire Database
@@ -439,7 +431,7 @@ QUERYRESPONSE ProRbtDb::HandleCounterIdEntry(PRORBTCOUNTERSESSION * pCounterSess
 						wsprintf(ackemessage.Message,L"תקלה בקבלת תשובה לבקשת ניפוק לשרת קונסיס");
 						return Q_ERROR;
 					}
-					else//The 'A' request was not cancelled, go through the reply
+					else//The 'A' request was not cancelled but finished, go through the reply
 					{
 						//Extract number of locations
 						memcpy(numart, paMesHeader->NumberOfArticles, sizeof(paMesHeader->NumberOfArticles));
@@ -494,16 +486,18 @@ QUERYRESPONSE ProRbtDb::HandleCounterIdEntry(PRORBTCOUNTERSESSION * pCounterSess
 				}
 				NumTenBatches--;
 			}
+
+			singleLock.Unlock();
 		}
 		else
 		{
 			//Error with Consis, Init entire Database
 			InitProRbtDb();
-			singleLock.Unlock();
 			memset(ackemessage.Message, 0, ACK_MESSAGE_SIZE * sizeof(_TCHAR));
 			wsprintf(ackemessage.Message,L"תקלה בתקשורת לשרת קונסיס");
 			return Q_ERROR;
 		}
+
 
 		//CONSIS Completed, Build Ack from intermediate database. Check if all entries in the aggregated database were dispensed.
 		int m = 0;
@@ -545,7 +539,6 @@ QUERYRESPONSE ProRbtDb::HandleCounterIdEntry(PRORBTCOUNTERSESSION * pCounterSess
 		pCounterSession->ReceivedNumLines = -1;
 		pCounterSession->CurrentSessionId = -1;
 
-		singleLock.Unlock();
 	}
 	return returnvalue;
 }

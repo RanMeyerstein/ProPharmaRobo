@@ -167,15 +167,15 @@ BOOL CPharmaRobot10Dlg::OnInitDialog()
 	Shell_NotifyIcon(NIM_ADD, &nidApp);
 
 	// TODO: Add extra initialization here
-	m_EditBarCodeB.SetWindowTextW(L"7290008546454");
+	m_EditBarCodeB.SetWindowTextW(L"7290000802961");
 	m_EditCounterUnitB.SetWindowTextW(L"1");
 	m_EditCounterUnitA.SetWindowTextW(L"1");
-	m_EditBarCodeA.SetWindowTextW(L"7290008546454");
+	m_EditBarCodeA.SetWindowTextW(L"7290000802961");
 	m_EditDispenser.SetWindowTextW(L"1");
 	m_EditPriority.SetWindowTextW(L"3");
 	m_EditQuantity.SetWindowTextW(L"1");
 	//m_EditBarcodeSQL.SetWindowTextW(L"7290004239988");
-	m_EditBarcodeSQL.SetWindowTextW(L"7290008546454");
+	m_EditBarcodeSQL.SetWindowTextW(L"7290000802961");
 	m_EditDsnSQL.SetWindowTextW(L"DRIVER=SQL Server;SERVER=192.168.1.5;UID=sa;PWD=B1Admin;DATABASE=PIRYON;TABLE=Xitems");
 	m_EditDsnSQL.ShowWindow(SW_HIDE);
 	WCHAR strQuan[10];
@@ -192,6 +192,8 @@ BOOL CPharmaRobot10Dlg::OnInitDialog()
 	tcItem.pszText = _T("SQL");
 
 	m_TabControl.InsertItem(1,&tcItem);
+
+	ExitThreads = FALSE;
 
 	hSocketThread = INVALID_HANDLE_VALUE;
 	hSocketThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)SocketThread, this, 0, NULL);
@@ -275,6 +277,7 @@ HCURSOR CPharmaRobot10Dlg::OnQueryDragIcon()
 
 void CPharmaRobot10Dlg::CloseEverything()
 {
+	ExitThreads = TRUE;
 
 	if (hSocketThread != INVALID_HANDLE_VALUE)
 	{
@@ -336,13 +339,23 @@ void CPharmaRobot10Dlg::OnBnClickedButton1()
 void CPharmaRobot10Dlg::OnBnClickedButton2()
 {
 	int fieldLength;
-	wchar_t wcstring[100];
+	wchar_t wcstring[MAX_CONSIS_MESSAGE_SIZE];
 	WCHAR orig[14];
 	char nstring[100];
-	BConsisStockRequest * pBresponse = (BConsisStockRequest *)ConsisMessage;
+	BConsisStockRequest * pBresponse = (BConsisStockRequest *)ConsisMessageB;
 
-	memset(ConsisMessage, '0', 41);
-	ConsisMessage[41] = '\0';
+	//Try to catch the Mutex for CONSIS Access
+	//Protect with Mutex the CONSIS resource
+	CSingleLock singleLock(&(m_MutexBMessage));
+
+	// Attempt to lock the shared resource
+	if (singleLock.Lock(INFINITE))
+	{
+		//log locking success
+	}
+
+	memset(ConsisMessageB, '0', 41);
+	ConsisMessageB[41] = '\0';
 
 	size_t convertedChars = 0;
 
@@ -364,7 +377,7 @@ void CPharmaRobot10Dlg::OnBnClickedButton2()
 	wcstombs_s(&convertedChars, nstring, origsize, orig , _TRUNCATE);
 	int location = 4 - m_EditCounterUnitB.GetWindowTextLengthW();
 
-	memcpy(&(ConsisMessage[location]), nstring, origsize - 1);
+	memcpy(&(ConsisMessageB[location]), nstring, origsize - 1);
 
 	/*Barcode*/
 	origsize = m_EditBarCodeB.GetWindowTextLengthW() + 1;
@@ -374,27 +387,53 @@ void CPharmaRobot10Dlg::OnBnClickedButton2()
 
 	memset(pBresponse->ArticleId,' ',30); //Clear leading zeros
 
-	memcpy((void*)&(ConsisMessage[location]), (void*) nstring, origsize - 1);
+	memcpy((void*)&(ConsisMessageB[location]), (void*) nstring, origsize - 1);
 
-	ConsisMessage[0] = 'B';
+	ConsisMessageB[0] = 'B';
 
-	mbstowcs_s(&convertedChars, wcstring, 42, ConsisMessage, _TRUNCATE);
+	mbstowcs_s(&convertedChars, wcstring, 42, ConsisMessageB, _TRUNCATE);
 
 	m_listBoxMain.AddString(wcstring);
 
-	Consis.SendStockQuery(ConsisMessage);
+	/* Send B message to CONSIS */
+	Consis.SendConsisMessage(ConsisMessageB, 42);
+
+	memset(Consis.bmessageBuffer, 0, MAX_CONSIS_MESSAGE_SIZE);
+
+	/* Infinitly wait for the reply to arrive from CONSIS by means of AsynchDialogue listener*/
+	::WaitForSingleObject(Consis.bMessageEvent.m_hObject, INFINITE);
+
+	bConsisReplyHeader *pHeader = (bConsisReplyHeader *)Consis.bmessageBuffer;
+
+	Consis.bmessageBuffer[Consis.bMessageLength]= '\0';
+	convertedChars = 0;
+	mbstowcs_s(&convertedChars, wcstring, Consis.bMessageLength + 1, Consis.bmessageBuffer, _TRUNCATE);
+	m_listBoxMain.AddString(wcstring);
+
+	singleLock.Unlock();
 }
 
 
 void CPharmaRobot10Dlg::OnBnClickedButton3()
 {
-	wchar_t wcstring[100];
+	wchar_t wcstring[MAX_CONSIS_MESSAGE_SIZE];
 	WCHAR orig[14];
-	char nstring[100];
+	char nstring[100], orderState[3];
 	AConsisRequestDispensedOcc * pAconsisOcc;
+	CString st;
 
-	memset(ConsisMessage, '0', 512);
-	ConsisMessage[61] = '\0';
+	//Try to catch the Mutex for CONSIS Access
+	//Protect with Mutex the CONSIS resource
+	CSingleLock singleLock(&(m_MutexAMessage));
+
+	// Attempt to lock the shared resource
+	if (singleLock.Lock(INFINITE))
+	{
+		//log locking success
+	}
+
+	memset(ConsisMessageA, '0', 512);
+	ConsisMessageA[61] = '\0';
 
 	size_t convertedChars = 0;
 
@@ -431,7 +470,7 @@ void CPharmaRobot10Dlg::OnBnClickedButton3()
 	wcstombs_s(&convertedChars, nstring, origsize, orig , _TRUNCATE);
 	int location = 12 - (origsize - 1);
 
-	memcpy(&(ConsisMessage[location]), nstring, (origsize - 1));
+	memcpy(&(ConsisMessageA[location]), nstring, (origsize - 1));
 
 	m_OrderNum++; if (m_OrderNum > 99999999) m_OrderNum = 0;//for every request increase number
 	WCHAR strQuan[10];
@@ -444,11 +483,11 @@ void CPharmaRobot10Dlg::OnBnClickedButton3()
 	wcstombs_s(&convertedChars, nstring, origsize, orig , _TRUNCATE);
 	location = 60 - (origsize - 1);
 
-	pAconsisOcc = (AConsisRequestDispensedOcc *)&(ConsisMessage[18]);
+	pAconsisOcc = (AConsisRequestDispensedOcc *)&(ConsisMessageA[18]);
 
 	memset(pAconsisOcc->ArticleId,' ',30); //Clear leading zeros with blanks
 
-	memcpy((void*)&(ConsisMessage[location]), (void*) nstring, (origsize - 1));
+	memcpy((void*)&(ConsisMessageA[location]), (void*) nstring, (origsize - 1));
 
 	/*Order number*/
 	origsize = m_EditOrderNum.GetWindowTextLengthW() + 1;
@@ -456,7 +495,7 @@ void CPharmaRobot10Dlg::OnBnClickedButton3()
 	wcstombs_s(&convertedChars, nstring, origsize, orig , _TRUNCATE);
 	location = 9 - (origsize - 1);
 
-	memcpy((void*)&(ConsisMessage[location]), (void*) nstring, (origsize - 1));
+	memcpy((void*)&(ConsisMessageA[location]), (void*) nstring, (origsize - 1));
 
 	/*Quantity*/
 	origsize = m_EditQuantity.GetWindowTextLengthW() + 1;
@@ -464,7 +503,7 @@ void CPharmaRobot10Dlg::OnBnClickedButton3()
 	wcstombs_s(&convertedChars, nstring, origsize, orig , _TRUNCATE);
 	location = 30 - (origsize - 1);
 
-	memcpy((void*)&(ConsisMessage[location]), (void*) nstring, (origsize - 1));
+	memcpy((void*)&(ConsisMessageA[location]), (void*) nstring, (origsize - 1));
 
 	/*Priority*/
 	origsize = m_EditPriority.GetWindowTextLengthW() + 1;
@@ -472,7 +511,7 @@ void CPharmaRobot10Dlg::OnBnClickedButton3()
 	wcstombs_s(&convertedChars, nstring, origsize, orig , _TRUNCATE);
 	location = 16 - (origsize - 1);
 
-	memcpy((void*)&(ConsisMessage[location]), (void*) nstring, (origsize - 1));
+	memcpy((void*)&(ConsisMessageA[location]), (void*) nstring, (origsize - 1));
 
 	/*Dispenser*/
 	origsize = m_EditDispenser.GetWindowTextLengthW() + 1;
@@ -480,18 +519,44 @@ void CPharmaRobot10Dlg::OnBnClickedButton3()
 	wcstombs_s(&convertedChars, nstring, origsize, orig , _TRUNCATE);
 	location = 15 - (origsize - 1);
 
-	memcpy((void*)&(ConsisMessage[location]), (void*) nstring, (origsize - 1));
+	memcpy((void*)&(ConsisMessageA[location]), (void*) nstring, (origsize - 1));
 
 	/*Number of articles is one*/
-	ConsisMessage[17] = '1';
+	ConsisMessageA[17] = '1';
 
-	ConsisMessage[0] = 'A';
+	ConsisMessageA[0] = 'A';
 
-	mbstowcs_s(&convertedChars, wcstring, 61, ConsisMessage, _TRUNCATE);
+	mbstowcs_s(&convertedChars, wcstring, 61, ConsisMessageA, _TRUNCATE);
 
 	m_listBoxMain.AddString(wcstring);
 
-	Consis.SendDispnseCommand(ConsisMessage);
+	Consis.SendConsisMessage(ConsisMessageA, 61);
+
+	ConsisMessageA[61]= '\0';
+	convertedChars = 0;
+	mbstowcs_s(&convertedChars, wcstring, 61 + 1, ConsisMessageA, _TRUNCATE);
+	m_listBoxMain.AddString(wcstring);
+
+	aConsisReplyHeader *paMesHeader = (aConsisReplyHeader *)Consis.amessageBuffer;
+
+	do
+	{
+		/* Infinitly wait for the reply to arrive from CONSIS by means of AsynchDialogue listener*/
+		::WaitForSingleObject(Consis.aMessageEvent.m_hObject, INFINITE);
+
+		Consis.amessageBuffer[Consis.aMessageLength] = '\0';
+
+		memcpy(orderState, paMesHeader->OrderState, sizeof(paMesHeader->OrderState));
+		orderState[2] = '\0';
+
+		//Print the reply of CONSIS 'a' to the dialog box
+		size_t origsize = strlen(Consis.amessageBuffer) + 1;
+		mbstowcs_s(&convertedChars, wcstring, origsize, Consis.amessageBuffer, _TRUNCATE);
+		st = wcstring; m_listBoxMain.AddString(st);
+
+	}while ((paMesHeader->OrderState[1] != '4') && (paMesHeader->OrderState[1] != '3'));
+
+	singleLock.Unlock();
 }
 
 

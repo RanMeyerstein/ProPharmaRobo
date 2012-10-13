@@ -19,9 +19,6 @@
     <None Include="res\PharmaRobot10.rc2">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="res\PharmaRobot 1.0.ico">
-      <Filter>Resource Files</Filter>
-    </None>
     <None Include="Bitmap1.Bmp">
       <Filter>Resource Files</Filter>
     </None>
