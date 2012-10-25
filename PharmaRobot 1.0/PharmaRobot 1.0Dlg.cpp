@@ -301,8 +301,8 @@ void CPharmaRobot10Dlg::CloseEverything()
 
 void CPharmaRobot10Dlg::OnBnClickedOk()
 {
-	CloseEverything();
-	CDialogEx::OnOK();
+//	CloseEverything();
+//	CDialogEx::OnOK();
 }
 
 

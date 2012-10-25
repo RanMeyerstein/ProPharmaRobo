@@ -130,7 +130,7 @@ BOOL ProRbtDb::BuildAndSendACommand(REQUESTINTERMEIDATEDB * pInteDb, CPharmaRobo
 	pdialog->ConsisMessageA[indexInAcommand] = '\0';
 
 	/* Number of articles */
-	sprintf(numart,"%d",indexInAcommand);
+	sprintf_s(numart,"%d",indexInAcommand);
 	if (indexInAcommand < 10){
 		pARequestHeader->NumberOfArticles[1] = numart[0];
 	}
@@ -439,7 +439,7 @@ QUERYRESPONSE ProRbtDb::HandleCounterIdEntry(PRORBTCOUNTERSESSION * pCounterSess
 						int numArticles =  atoi(numart);
 
 						//TEMP RANM DEBUG
-						wchar_t Stringnumdif1f[3]; _itow(numArticles,Stringnumdif1f,10);
+						wchar_t Stringnumdif1f[3]; _itow_s(numArticles,Stringnumdif1f,10);
 						Stringnumdif1f[2] = '\0';
 						st = L"numArticles = "; st += Stringnumdif1f; pdialog->m_listBoxMain.AddString(st);
 						//TEMP RANM DEBUG
@@ -515,7 +515,7 @@ QUERYRESPONSE ProRbtDb::HandleCounterIdEntry(PRORBTCOUNTERSESSION * pCounterSess
 				AckedString += L"סוג פריט"; AckedString += L":"; AckedString += L" ";
 				AckedString += description; AckedString += L"\n";
 				AckedString += L"חסרים"; AckedString += L":"; AckedString += L" ";
-				wchar_t Stringnumdiff[3]; _itow(InterMDb.Entry[m].NumReq - InterMDb.Entry[m].NumDis,Stringnumdiff,10);
+				wchar_t Stringnumdiff[3]; _itow_s(InterMDb.Entry[m].NumReq - InterMDb.Entry[m].NumDis,Stringnumdiff,10);
 				AckedString += Stringnumdiff;
 				AckedString += L"\n\n";
 			}

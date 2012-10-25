@@ -74,7 +74,6 @@ protected:
 	CStatic  m_Static9;
 	CStatic  m_Static10;
 
-	CListBox m_ListSQLDesc;
 	CEdit    m_EditBarcodeSQL;
 	CButton  m_ButtonGetSQLDesc;
 	CStatic  m_StaticBarcodeSQL;
@@ -99,7 +98,7 @@ public:
 	CEdit    m_EditPriority; //Parameters taken From GUI for 'A' command
 	CEdit    m_EditDispenser;//Parameters taken From GUI for 'A' command
 	CButton  m_CheckBoxRemoteSvr;
-
+	CListBox m_ListSQLDesc;
 	int      m_OrderNum;
 	//Mutex for access to CONSIS
 	CMutex m_MutexAMessage;

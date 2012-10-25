@@ -47,7 +47,7 @@ QUERYRESPONSE HandleQueryCommand(PRORBTPARAMS * pProRbtParams, CPharmaRobot10Dlg
 		int location = 4 - len;
 		wchar_t Source[4];
 		wsprintf(Source, CounterUnitString.GetString());
-		wcstombs(&(pdialog->ConsisMessageB[location]), Source, len);
+		wcstombs((&(pdialog->ConsisMessageB[location])), Source, len);
 
 		/*Barcode*/
 		CString BarCodeString = pProRbtParams->Barcode;
@@ -149,7 +149,7 @@ DWORD WINAPI ClientSocketHandlerThread(SOCKET handle)
 
 	// Get the client's host name
 	if (!clntSock.GetPeerName((SOCKADDR*)&echoClntAddr, &clntLen)) {
-		//DieWithError("clntSock.GetPeerName() failed");
+
 	}
 
 	int recvMsgSize;              // Size of received message
@@ -157,7 +157,7 @@ DWORD WINAPI ClientSocketHandlerThread(SOCKET handle)
 	// Recieve message from client 
 	recvMsgSize = clntSock.Receive(echoBuffer, sizeof(PRORBTPARAMS), 0);
 	if (recvMsgSize < 0) {
-		// DieWithError("clntSock.Receive() failed");
+
 	}
 
 	CString st;

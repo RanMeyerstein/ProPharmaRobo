@@ -8,6 +8,33 @@ and send back a 'p' response to CONSIS.
 #include "PharmaRobot 1.0.h"
 #include "PharmaRobot 1.0Dlg.h"
 
+void CleanString(wchar_t* stringptr, size_t length)
+{
+	wchar_t helper[256];
+	memset (helper , 0, 256);
+	int numberdeleted = 0;
+
+	if (length > 39)
+		return;
+
+	for (UINT32 i = 0; i < length; i++)
+	{
+		if (stringptr [i] == 0)
+		{
+			break;
+		}
+		if (stringptr [i] > 8000)
+		{
+			memcpy(&helper[i - numberdeleted], &stringptr[i + 1], 40);
+			numberdeleted++;
+		}
+	}
+	if (numberdeleted != 0)
+	{//There's a new helper conetnt
+		memcpy(stringptr, helper, 39);
+	}
+}
+
 
 /* Low priority task checks if there's a message to be received from CONSIS and then sleeps for 200 msec */
 DWORD WINAPI AsynchDialogueListenerThread(CPharmaRobot10Dlg* pdialog)
@@ -63,13 +90,18 @@ DWORD WINAPI AsynchDialogueListenerThread(CPharmaRobot10Dlg* pdialog)
 				//Get Description from Yarpa SQL
 				if (pdialog->GetItemDescFromBarcode(articleID, description))
 				{//Got a description
+					//Clean the description from ascii codes 8206
+					CleanString(description, 39);
+					size_t sizeloc = 39, sizesent = 39;
 					char DescriptionInChar[40];
-					wcstombs(DescriptionInChar, description, 39);
-					sprintf(PResponseToConsis.ArticleName,DescriptionInChar);
+					memset(DescriptionInChar, ' ', 39);
+					DescriptionInChar[39] = 0;
+					wcstombs_s(&sizeloc, DescriptionInChar, description, _TRUNCATE);
+					sprintf_s(PResponseToConsis.ArticleName, DescriptionInChar);
 				}
 				else
 				{
-					sprintf(PResponseToConsis.ArticleName, "Name Missing");
+					sprintf_s(PResponseToConsis.ArticleName, "Name Missing");
 				}
 				PResponseToConsis.RecordType = 'P';
 				memcpy(&(PResponseToConsis.ArticleId), ppRequestMessage->ArticleId, sizeof(PResponseToConsis.ArticleId));
